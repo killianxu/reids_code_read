@@ -2041,11 +2041,11 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* Run a fast expire cycle (the called function will return
      * ASAP if a fast cycle is not needed). */
     if (server.active_expire_enabled && server.masterhost == NULL)
-        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);
+        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);//去除过期键
 
     /* Send all the slaves an ACK request if at least one client blocked
      * during the previous event loop iteration. */
-    if (server.get_ack_from_slaves) {
+    if (server.get_ack_from_slaves) {//向slaves集群发送消息
         robj *argv[3];
 
         argv[0] = createStringObject("REPLCONF",8);
@@ -2061,7 +2061,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* Unblock all the clients blocked for synchronous replication
      * in WAIT. */
     if (listLength(server.clients_waiting_acks))
-        processClientsWaitingReplicas();
+        processClientsWaitingReplicas();//向master机器发送消息后,向客户端返回
 
     /* Check if there are clients unblocked by modules that implement
      * blocking commands. */
@@ -2072,7 +2072,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
         processUnblockedClients();
 
     /* Write the AOF buffer on disk */
-    flushAppendOnlyFile(0);
+    flushAppendOnlyFile(0); //刷新AOF缓存到磁盘
 
     /* Handle writes with pending output buffers. */
     handleClientsWithPendingWrites();
@@ -2743,6 +2743,7 @@ void initServer(void) {
         exit(1);
 
     /* Open the listening Unix domain socket. */
+    //unixsocket用于本机进程间通信，不需要经过网络协议栈，基于文件
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
         server.sofd = anetUnixServer(server.neterr,server.unixsocket,
@@ -2810,6 +2811,7 @@ void initServer(void) {
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
      * expired keys and so forth. */
+    //创建时间事件,1ms调用serverCron
     if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
         serverPanic("Can't create event loop timers.");
         exit(1);
@@ -2817,6 +2819,7 @@ void initServer(void) {
 
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
+    //设定套接字可读可写状态的处理函数
     for (j = 0; j < server.ipfd_count; j++) {
         if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
             acceptTcpHandler,NULL) == AE_ERR)
@@ -2837,7 +2840,7 @@ void initServer(void) {
                 "Error registering the readable event for the module "
                 "blocked clients subsystem.");
     }
-
+    //打开AOF文件
     /* Open the AOF file if needed. */
     if (server.aof_state == AOF_ON) {
         server.aof_fd = open(server.aof_filename,
@@ -2859,7 +2862,7 @@ void initServer(void) {
         server.maxmemory_policy = MAXMEMORY_NO_EVICTION;
     }
 
-    if (server.cluster_enabled) clusterInit();
+    if (server.cluster_enabled) clusterInit();//集群初始化
     replicationScriptCacheInit();
     scriptingInit(1);
     slowlogInit();
@@ -4926,14 +4929,14 @@ int main(int argc, char **argv) {
     int background = server.daemonize && !server.supervised;
     if (background) daemonize();//后台进程
 
-    //初始化服务器功能
+    //初始化服务器功能,包括时间事件1ms调用serverCron,文件事件(套接字可读可写时的处理函数)，集群初始化等
     initServer();
 
     //后台进程创建pid文件
     if (background || server.pidfile) createPidFile();
     redisSetProcTitle(argv[0]);
     redisAsciiArt();
-    checkTcpBacklogSettings();
+    checkTcpBacklogSettings();//检查TCP backlog大小是否超过系统限制，backlog表示系统全联接队列的大小
 
     if (!server.sentinel_mode) {
         /* Things not needed when running in Sentinel mode. */
@@ -4965,10 +4968,10 @@ int main(int argc, char **argv) {
         serverLog(LL_WARNING,"WARNING: You specified a maxmemory value that is less than 1MB (current value is %llu bytes). Are you sure this is what you really want?", server.maxmemory);
     }
 
-    aeSetBeforeSleepProc(server.el,beforeSleep);
-    aeSetAfterSleepProc(server.el,afterSleep);
-    aeMain(server.el);
-    aeDeleteEventLoop(server.el);
+    aeSetBeforeSleepProc(server.el,beforeSleep);//设置beforeSleep事件处理函数
+    aeSetAfterSleepProc(server.el,afterSleep);//设置aftersleep事件处理函数
+    aeMain(server.el);//循环,接受客户端连接,处理命令等
+    aeDeleteEventLoop(server.el);//退出循环,删除事件处理
     return 0;
 }
 
