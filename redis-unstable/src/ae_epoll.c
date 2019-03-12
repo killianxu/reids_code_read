@@ -30,7 +30,7 @@
 
 
 #include <sys/epoll.h>
-
+//epoll特定数据结构
 typedef struct aeApiState {
     int epfd;
     struct epoll_event *events;
