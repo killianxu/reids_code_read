@@ -355,7 +355,11 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_AFTER_SLEEP set, the aftersleep callback is called.
  *
  * The function returns the number of events processed. */
+<<<<<<< HEAD
 //处理事件
+=======
+//网络交互的核心代码
+>>>>>>> 1a9487ce587ac995a40bdc7c7a600cee5ea95ba4
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
@@ -412,6 +416,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
          * some event fires. */
         //IO多路复用,tvp为NULl一直等待,直到网络中事件发生,tvp内的时间为0不等待,立即返回,大于0为超时时间
         numevents = aeApiPoll(eventLoop, tvp);
+
 
         /* After sleep callback. */
         if (eventLoop->aftersleep != NULL && flags & AE_CALL_AFTER_SLEEP)
@@ -495,7 +500,7 @@ int aeWait(int fd, int mask, long long milliseconds) {
         return retval;
     }
 }
-//主循环
+//处理客户端命令的主函数，由main函数调用,aeEventLoop定义在(ae.h),beforesleep和aftersleep均在服务器启动初始化时设定
 void aeMain(aeEventLoop *eventLoop) {
     eventLoop->stop = 0;
     while (!eventLoop->stop) {
