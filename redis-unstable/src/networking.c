@@ -777,7 +777,7 @@ void copyClientOutputBuffer(client *dst, client *src) {
 int clientHasPendingReplies(client *c) {
     return c->bufpos || listLength(c->reply);
 }
-
+//在server全局对象中加入新的client
 #define MAX_ACCEPTS_PER_CALL 1000
 static void acceptCommonHandler(int fd, int flags, char *ip) {
     client *c;
@@ -848,7 +848,7 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
     server.stat_numconnections++;
     c->flags |= flags;
 }
-
+//建立TCP连接
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
     char cip[NET_IP_STR_LEN];
@@ -1622,7 +1622,7 @@ void processInputBufferAndReplicate(client *c) {
         }
     }
 }
-
+//接收数据
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     client *c = (client*) privdata;
     int nread, readlen;

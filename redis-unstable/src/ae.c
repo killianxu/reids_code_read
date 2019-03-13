@@ -355,11 +355,9 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
  * if flags has AE_CALL_AFTER_SLEEP set, the aftersleep callback is called.
  *
  * The function returns the number of events processed. */
-<<<<<<< HEAD
-//处理事件
-=======
+
 //网络交互的核心代码
->>>>>>> 1a9487ce587ac995a40bdc7c7a600cee5ea95ba4
+
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
@@ -448,6 +446,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
              * Fire the readable event if the call sequence is not
              * inverted. */
             if (!invert && fe->mask & mask & AE_READABLE) {
+                //监听套接字,acceptTcpHandler函数(networking.c)，新建立的client套接字绑定可读事件readQueryFromClient(networking.c)
                 fe->rfileProc(eventLoop,fd,fe->clientData,mask);
                 fired++;
             }
