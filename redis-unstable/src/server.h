@@ -788,15 +788,17 @@ typedef struct client {
     //此客户端正在操作的数据库,就像mysql的use db命令效果一样
     redisDb *db;            /* Pointer to currently SELECTed DB. */
     robj *name;             /* As set by CLIENT SETNAME. */
-    //查询缓存
+    //网络接收的数据放在querybuf
     sds querybuf;           /* Buffer we use to accumulate client queries. */
+    //已读的查询缓存位置
     size_t qb_pos;          /* The position we have read in querybuf. */
+    //用于和slave同步
     sds pending_querybuf;   /* If this client is flagged as master, this buffer
                                represents the yet not applied portion of the
                                replication stream that we are receiving from
                                the master. */
     size_t querybuf_peak;   /* Recent (100ms or more) peak of querybuf size. */
-    //客户端正在运行的命令的参数数目和具体参数
+    //客户端命令和具体参数
     int argc;               /* Num of arguments of current command. */
     robj **argv;            /* Arguments of current command. */
     struct redisCommand *cmd, *lastcmd;  /* Last command executed. */

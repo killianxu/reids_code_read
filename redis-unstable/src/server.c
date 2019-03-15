@@ -3287,9 +3287,9 @@ int processCommand(client *c) {
 
     /* Now lookup the command and check ASAP about trivial error conditions
      * such as wrong arity, bad command name and so forth. */
-    c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);
-    if (!c->cmd) {
-        flagTransaction(c);
+    c->cmd = c->lastcmd = lookupCommand(c->argv[0]->ptr);//根据命令字符串查找命令
+    if (!c->cmd) {//命令不对
+        flagTransaction(c);//当client执行过multi,用于标记exec执行失败,命令没查找到
         sds args = sdsempty();
         int i;
         for (i=1; i < c->argc && sdslen(args) < 128; i++)
@@ -3299,7 +3299,7 @@ int processCommand(client *c) {
         sdsfree(args);
         return C_OK;
     } else if ((c->cmd->arity > 0 && c->cmd->arity != c->argc) ||
-               (c->argc < -c->cmd->arity)) {
+               (c->argc < -c->cmd->arity)) {//参数数目不对
         flagTransaction(c);
         addReplyErrorFormat(c,"wrong number of arguments for '%s' command",
             c->cmd->name);
@@ -3308,6 +3308,7 @@ int processCommand(client *c) {
 
     /* Check if the user is authenticated. This check is skipped in case
      * the default user is flagged as "nopass" and is active. */
+    //权限认证
     int auth_required = !(DefaultUser->flags & USER_FLAG_NOPASS) &&
                         !c->authenticated;
     if (auth_required || DefaultUser->flags & USER_FLAG_DISABLED) {
