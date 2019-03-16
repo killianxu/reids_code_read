@@ -1632,6 +1632,7 @@ void getExpansiveClientsInfo(size_t *in_usage, size_t *out_usage) {
  * default server.hz value is 10, so sometimes here we need to process thousands
  * of clients per second, turning this function into a source of latency.
  */
+//对客户端做一些操作,比如超时断开
 #define CLIENTS_CRON_MIN_ITERATIONS 5
 void clientsCron(void) {
     /* Try to process at least numclients/server.hz of clients
@@ -1662,8 +1663,11 @@ void clientsCron(void) {
         /* The following functions do different service checks on the client.
          * The protocol is that they return non-zero if the client was
          * terminated. */
+        //处理超时
         if (clientsCronHandleTimeout(c,now)) continue;
+        //对于内存占用比较大且空转时间较长的客户端查询缓存，清除多余的内存
         if (clientsCronResizeQueryBuffer(c)) continue;
+        //记录内存占用比较大的客户端
         if (clientsCronTrackExpansiveClients(c)) continue;
     }
 }
@@ -1674,8 +1678,9 @@ void clientsCron(void) {
 void databasesCron(void) {
     /* Expire keys by random sampling. Not required for slaves
      * as master will synthesize DELs for us. */
+    //清除过期key
     if (server.active_expire_enabled && server.masterhost == NULL) {
-        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_SLOW);
+        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_SLOW);//expire.c
     } else if (server.masterhost != NULL) {
         expireSlaveKeys();
     }
@@ -1687,6 +1692,7 @@ void databasesCron(void) {
     /* Perform hash tables rehashing if needed, but only if there are no
      * other processes saving the DB on disk. Otherwise rehashing is bad
      * as will cause a lot of copy-on-write of memory pages. */
+    //重rehash
     if (server.rdb_child_pid == -1 && server.aof_child_pid == -1) {
         /* We use global counters so if we stop the computation at a given
          * DB we'll be able to start from the successive in the next
@@ -1759,7 +1765,7 @@ void updateCachedTime(void) {
  * so in order to throttle execution of things we want to do less frequently
  * a macro is used: run_with_period(milliseconds) { .... }
  */
-
+//时间事件,间隔周期由server.hz决定
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     int j;
     UNUSED(eventLoop);
@@ -1768,10 +1774,11 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Software watchdog: deliver the SIGALRM that will reach the signal
      * handler if we don't return here fast enough. */
+    //看门狗,函数应该尽快返回，否则会触发SIGALRM信号(由定时器触发)
     if (server.watchdog_period) watchdogScheduleSignal(server.watchdog_period);
 
     /* Update the time cache. */
-    updateCachedTime();
+    updateCachedTime();//更新server中的unixtime
 
     server.hz = server.config_hz;
     /* Adapt the server.hz value to the number of configured clients. If we have
@@ -1807,8 +1814,8 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
      *
      * Note that you can change the resolution altering the
      * LRU_CLOCK_RESOLUTION define. */
-    unsigned long lruclock = getLRUClock();
-    atomicSet(server.lruclock,lruclock);
+    unsigned long lruclock = getLRUClock();//根据现在的时间计算lruclock
+    atomicSet(server.lruclock,lruclock);//更新server的lruclock
 
     /* Record the max memory used since the server was started. */
     if (zmalloc_used_memory() > server.stat_peak_memory)
@@ -1877,13 +1884,16 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* We need to do a few operations on clients asynchronously. */
+    //对连接的客户端做一些处理,比如超时断连、清除占用内存较大且空转时间较长的客户端多余缓存
     clientsCron();
 
     /* Handle background operations on Redis databases. */
+    //清除过期key且rehash
     databasesCron();
 
     /* Start a scheduled AOF rewrite if this was requested by the user while
      * a BGSAVE was in progress. */
+    //aof文件重写
     if (server.rdb_child_pid == -1 && server.aof_child_pid == -1 &&
         server.aof_rewrite_scheduled)
     {
@@ -1891,13 +1901,14 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     }
 
     /* Check if a background saving or AOF rewrite in progress terminated. */
+    //等待执行rdb或aof重写的子进程终止
     if (server.rdb_child_pid != -1 || server.aof_child_pid != -1 ||
         ldbPendingChildren())
     {
         int statloc;
         pid_t pid;
 
-        if ((pid = wait3(&statloc,WNOHANG,NULL)) != 0) {
+        if ((pid = wait3(&statloc,WNOHANG,NULL)) != 0) {//等待子进程终止
             int exitcode = WEXITSTATUS(statloc);
             int bysignal = 0;
 
@@ -1928,6 +1939,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     } else {
         /* If there is not a background saving/rewrite in progress check if
          * we have to save/rewrite now. */
+        //检查现在是否需要持久化
         for (j = 0; j < server.saveparamslen; j++) {
             struct saveparam *sp = server.saveparams+j;
 
@@ -1949,7 +1961,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
                 break;
             }
         }
-
+        //触发aof文件重写
         /* Trigger an AOF rewrite if needed. */
         if (server.aof_state == AOF_ON &&
             server.rdb_child_pid == -1 &&
@@ -1970,6 +1982,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* AOF postponed flush: Try at every cron cycle if the slow fsync
      * completed. */
+    //刷新aof文件缓存到磁盘
     if (server.aof_flush_postponed_start) flushAppendOnlyFile(0);
 
     /* AOF write errors: in this case we have a buffer to flush as well and
@@ -1989,15 +2002,15 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
 
     /* Replication cron function -- used to reconnect to master,
      * detect transfer failures, start background RDB transfers and so forth. */
-    run_with_period(1000) replicationCron();
+    run_with_period(1000) replicationCron();//重连master
 
     /* Run the Redis Cluster cron. */
     run_with_period(100) {
-        if (server.cluster_enabled) clusterCron();
+        if (server.cluster_enabled) clusterCron();//集群
     }
 
     /* Run the Sentinel timer if we are in sentinel mode. */
-    if (server.sentinel_mode) sentinelTimer();
+    if (server.sentinel_mode) sentinelTimer();//哨兵模式执行
 
     /* Cleanup expired MIGRATE cached sockets. */
     run_with_period(1000) {
@@ -2041,7 +2054,7 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
     /* Run a fast expire cycle (the called function will return
      * ASAP if a fast cycle is not needed). */
     if (server.active_expire_enabled && server.masterhost == NULL)
-        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);//去除过期键
+        activeExpireCycle(ACTIVE_EXPIRE_CYCLE_FAST);//去除过期键(FAST)
 
     /* Send all the slaves an ACK request if at least one client blocked
      * during the previous event loop iteration. */
@@ -3145,6 +3158,7 @@ void preventCommandReplication(client *c) {
  * preventCommandReplication(client *c);
  *
  */
+//调用命令执行函数
 void call(client *c, int flags) {
     long long dirty, start, duration;
     int client_old_flags = c->flags;
@@ -3156,6 +3170,7 @@ void call(client *c, int flags) {
         !server.loading &&
         !(c->cmd->flags & (CMD_SKIP_MONITOR|CMD_ADMIN)))
     {
+        //发送执行的命令到server对象的monitors节点
         replicationFeedMonitors(c,server.monitors,c->db->id,c->argv,c->argc);
     }
 
@@ -3168,7 +3183,7 @@ void call(client *c, int flags) {
     /* Call the command. */
     dirty = server.dirty;
     start = ustime();
-    c->cmd->proc(c);
+    c->cmd->proc(c);//执行命令
     duration = ustime()-start;
     dirty = server.dirty-dirty;
     if (dirty < 0) dirty = 0;
@@ -3232,6 +3247,7 @@ void call(client *c, int flags) {
         /* Call propagate() only if at least one of AOF / replication
          * propagation is needed. Note that modules commands handle replication
          * in an explicit way, so we never replicate them automatically. */
+        //命令存入AOF或同步到master集群
         if (propagate_flags != PROPAGATE_NONE && !(c->cmd->flags & CMD_MODULE))
             propagate(c->cmd,c->db->id,c->argv,c->argc,propagate_flags);
     }
@@ -3340,6 +3356,7 @@ int processCommand(client *c) {
      * However we don't perform the redirection if:
      * 1) The sender of this command is our master.
      * 2) The command has no key arguments. */
+    //集群重定向
     if (server.cluster_enabled &&
         !(c->flags & CLIENT_MASTER) &&
         !(c->flags & CLIENT_LUA &&
@@ -3349,6 +3366,7 @@ int processCommand(client *c) {
     {
         int hashslot;
         int error_code;
+        //获得集群节点
         clusterNode *n = getNodeByQuery(c,c->cmd,c->argv,c->argc,
                                         &hashslot,&error_code);
         if (n == NULL || n != server.cluster->myself) {
@@ -3475,16 +3493,17 @@ int processCommand(client *c) {
         addReply(c, shared.slowscripterr);
         return C_OK;
     }
-
+    //执行命令
     /* Exec the command */
     if (c->flags & CLIENT_MULTI &&
         c->cmd->proc != execCommand && c->cmd->proc != discardCommand &&
         c->cmd->proc != multiCommand && c->cmd->proc != watchCommand)
     {
+        //multi标记,将命令存入队列,exec时调用
         queueMultiCommand(c);
         addReply(c,shared.queued);
     } else {
-        call(c,CMD_CALL_FULL);
+        call(c,CMD_CALL_FULL);//调用函数,且同步命令到AOF或slave
         c->woff = server.master_repl_offset;
         if (listLength(server.ready_keys))
             handleClientsBlockedOnKeys();

@@ -267,6 +267,7 @@ static aeTimeEvent *aeSearchNearestTimer(aeEventLoop *eventLoop)
 }
 
 /* Process time events */
+//每次处理完文件事件将会执行时间事件
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
@@ -281,6 +282,8 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
      * events to be processed ASAP when this happens: the idea is that
      * processing events earlier is less dangerous than delaying them
      * indefinitely, and practice suggests it is. */
+    //一般情况下,系统时钟比lastTime大,若系统时钟被改掉，会出现意外情况
+    //若系统时钟比lastTime小,则立即执行时间事件
     if (now < eventLoop->lastTime) {
         te = eventLoop->timeEventHead;
         while(te) {
@@ -333,7 +336,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
             if (retval != AE_NOMORE) {
                 aeAddMillisecondsToNow(retval,&te->when_sec,&te->when_ms);
             } else {
-                te->id = AE_DELETED_EVENT_ID;
+                te->id = AE_DELETED_EVENT_ID;//下一次处理时间事件,将会将标记为AE_DELETED_EVENT_ID的删除
             }
         }
         te = te->next;
@@ -472,6 +475,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             processed++;
         }
     }
+    //处理事件时间
     /* Check time events */
     if (flags & AE_TIME_EVENTS)
         processed += processTimeEvents(eventLoop);
@@ -506,6 +510,7 @@ void aeMain(aeEventLoop *eventLoop) {
     while (!eventLoop->stop) {
         if (eventLoop->beforesleep != NULL)
             eventLoop->beforesleep(eventLoop);
+        //处理文件时间及时间事件
         aeProcessEvents(eventLoop, AE_ALL_EVENTS|AE_CALL_AFTER_SLEEP);
     }
 }
