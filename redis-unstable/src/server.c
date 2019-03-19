@@ -2736,10 +2736,11 @@ void initServer(void) {
     server.get_ack_from_slaves = 0;
     server.clients_paused = 0;
     server.system_memory_size = zmalloc_get_memory_size();
-
+    //创建常用字符串,比如命令回复pong及命令字符串等
     createSharedObjects();
+    //根据配置的最大连接客户端数和CONFIG_MIN_RESERVED_FDS(用于监听、日志文件等文件描述符)设置最大允许打开的文件描述符数
     adjustOpenFilesLimit();
-    //server.maxclients+CONFIG_FDSET_INCR文件描述符的数目,返回aeEventLoop对象
+    //初始化aeEventLoop对象并赋值给server中的指针变量el
     server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
     if (server.el == NULL) {
         serverLog(LL_WARNING,
@@ -2750,7 +2751,7 @@ void initServer(void) {
     server.db = zmalloc(sizeof(redisDb)*server.dbnum);
 
     /* Open the TCP listening socket for the user commands. */
-    //进行事件监听
+    //用于创建监听文件描述符
     if (server.port != 0 &&
         listenToPort(server.port,server.ipfd,&server.ipfd_count) == C_ERR)
         exit(1);
@@ -2785,6 +2786,7 @@ void initServer(void) {
         server.db[j].avg_ttl = 0;
         server.db[j].defrag_later = listCreate();
     }
+    //创建lru池,内存超过设置的值时,根据淘汰策略,清除部分key
     evictionPoolAlloc(); /* Initialize the LRU keys pool. */
     server.pubsub_channels = dictCreate(&keylistDictType,NULL);
     server.pubsub_patterns = listCreate();

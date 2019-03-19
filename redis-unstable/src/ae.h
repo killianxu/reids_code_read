@@ -68,19 +68,28 @@ typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientDat
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
 
 /* File event structure */
+//文件事件结构体
 typedef struct aeFileEvent {
+    ////读或者写，也用于标识该事件结构体是否正在使用
     int mask; /* one of AE_(READABLE|WRITABLE|BARRIER) */
+    //读事件的处理函数
     aeFileProc *rfileProc;
+    //写事件的处理函数
     aeFileProc *wfileProc;
+    //传递给上述两个函数的数据
     void *clientData;
 } aeFileEvent;
 
 /* Time event structure */
+//时间事件
 typedef struct aeTimeEvent {
+    //时间事件标识符，用于唯一标识该时间事件，并且用于删除时间事件
     long long id; /* time event identifier. */
     long when_sec; /* seconds */
     long when_ms; /* milliseconds */
+    //事件对应的处理程序
     aeTimeProc *timeProc;
+    //时间事件的最后一次处理程序，若已设置，则删除时间事件时会被调用
     aeEventFinalizerProc *finalizerProc;
     void *clientData;
     struct aeTimeEvent *prev;
@@ -88,6 +97,7 @@ typedef struct aeTimeEvent {
 } aeTimeEvent;
 
 /* A fired event */
+//用于保存已触发的事件
 typedef struct aeFiredEvent {
     int fd;
     int mask;
@@ -95,17 +105,22 @@ typedef struct aeFiredEvent {
 
 /* State of an event based program */
 typedef struct aeEventLoop {
+    //最大文件描述符
     int maxfd;   /* highest file descriptor currently registered */
+    //文件描述符的最大监听数
     int setsize; /* max number of file descriptors tracked */
+    //生成时间事件的唯一标识
     long long timeEventNextId;
     //检测系统时钟偏差
     time_t lastTime;     /* Used to detect system clock skew */
-    //双向链表
+    //双向链表,注册文件事件
     aeFileEvent *events; /* Registered events */
+    //已触发的文件事件
     aeFiredEvent *fired; /* Fired events */
+    //注册的时间事件
     aeTimeEvent *timeEventHead;
     int stop;
-    //aeApiState类型
+    //处理底层特定API的数据，对于epoll来说，该结构体包含了epoll fd和epoll_event
     void *apidata; /* This is used for polling API specific data */
     aeBeforeSleepProc *beforesleep;
     aeBeforeSleepProc *aftersleep;
