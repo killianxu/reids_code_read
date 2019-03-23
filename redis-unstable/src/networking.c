@@ -90,10 +90,10 @@ client *createClient(int fd) {
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
     if (fd != -1) {
-        anetNonBlock(NULL,fd);
-        anetEnableTcpNoDelay(NULL,fd);
+        anetNonBlock(NULL,fd);//使连接socket变为非阻塞
+        anetEnableTcpNoDelay(NULL,fd);//不使用Nagle算法，增强实时性
         if (server.tcpkeepalive)
-            anetKeepAlive(NULL,fd,server.tcpkeepalive);
+            anetKeepAlive(NULL,fd,server.tcpkeepalive);//SO_KEEPALIVE保持连接
         if (aeCreateFileEvent(server.el,fd,AE_READABLE,
             readQueryFromClient, c) == AE_ERR)
         {
@@ -103,7 +103,7 @@ client *createClient(int fd) {
         }
     }
 
-    selectDb(c,0);
+    selectDb(c,0);//默认选择0号连接
     uint64_t client_id;
     atomicGetIncr(server.next_client_id,client_id,1);
     c->id = client_id;
@@ -160,7 +160,7 @@ client *createClient(int fd) {
     listSetFreeMethod(c->pubsub_patterns,decrRefCountVoid);
     listSetMatchMethod(c->pubsub_patterns,listMatchObjects);
     if (fd != -1) linkClient(c);
-    initClientMultiState(c);
+    initClientMultiState(c);//Client state initialization for MULTI/EXEC
     return c;
 }
 
@@ -793,6 +793,7 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
      * connection. Note that we create the client instead to check before
      * for this condition, since now the socket is already set in non-blocking
      * mode and we can send an error for free using the Kernel I/O */
+    //客户端连接数超过最大连接数限制,向此客户端发送错误消息并关闭连接
     if (listLength(server.clients) > server.maxclients) {
         char *err = "-ERR max number of clients reached\r\n";
 
@@ -849,10 +850,10 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
     server.stat_numconnections++;
     c->flags |= flags;
 }
-//建立TCP连接
+//获取TCP连接
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
-    char cip[NET_IP_STR_LEN];
+    int cport, cfd, max = MAX_ACCEPTS_PER_CALL;//存客户端口及建立连接的套接字描述符,初始化1000
+    char cip[NET_IP_STR_LEN];//存客户端ip
     UNUSED(el);
     UNUSED(mask);
     UNUSED(privdata);
@@ -1392,6 +1393,7 @@ static void setProtocolError(const char *errstr, client *c) {
  * This function is called if processInputBuffer() detects that the next
  * command is in RESP format, so the first byte in the command is found
  * to be '*'. Otherwise for inline commands processInlineBuffer() is called. */
+//解析REST格式数据,例如set simpleKey simpleValue(*3\r\n$3\r\nSET\r\n$9\r\nsimpleKey\r\n$11\r\nsimpleValue\r\n)
 int processMultibulkBuffer(client *c) {
     char *newline = NULL;
     int ok;
@@ -1402,7 +1404,7 @@ int processMultibulkBuffer(client *c) {
         serverAssertWithInfo(c,NULL,c->argc == 0);
 
         /* Multi bulk length cannot be read without a \r\n */
-        newline = strchr(c->querybuf+c->qb_pos,'\r');
+        newline = strchr(c->querybuf+c->qb_pos,'\r');//找第一个\r的位置
         if (newline == NULL) {
             if (sdslen(c->querybuf)-c->qb_pos > PROTO_INLINE_MAX_SIZE) {
                 addReplyError(c,"Protocol error: too big mbulk count string");
@@ -1418,6 +1420,7 @@ int processMultibulkBuffer(client *c) {
         /* We know for sure there is a whole line since newline != NULL,
          * so go ahead and find out the multi bulk length. */
         serverAssertWithInfo(c,NULL,c->querybuf[c->qb_pos] == '*');
+        //解析multibulk长度,比如例子中的3
         ok = string2ll(c->querybuf+1+c->qb_pos,newline-(c->querybuf+1+c->qb_pos),&ll);
         if (!ok || ll > 1024*1024) {
             addReplyError(c,"Protocol error: invalid multibulk length");
@@ -1425,11 +1428,11 @@ int processMultibulkBuffer(client *c) {
             return C_ERR;
         }
 
-        c->qb_pos = (newline-c->querybuf)+2;
+        c->qb_pos = (newline-c->querybuf)+2;//跳过\r\n
 
         if (ll <= 0) return C_OK;
 
-        c->multibulklen = ll;
+        c->multibulklen = ll;//命令字符串长度
 
         /* Setup argv array on client structure */
         if (c->argv) zfree(c->argv);
@@ -1439,7 +1442,7 @@ int processMultibulkBuffer(client *c) {
     serverAssertWithInfo(c,NULL,c->multibulklen > 0);
     while(c->multibulklen) {
         /* Read bulk length if unknown */
-        if (c->bulklen == -1) {
+        if (c->bulklen == -1) {//字符串长度未知,去取字符串长度
             newline = strchr(c->querybuf+c->qb_pos,'\r');
             if (newline == NULL) {
                 if (sdslen(c->querybuf)-c->qb_pos > PROTO_INLINE_MAX_SIZE) {
@@ -1462,7 +1465,7 @@ int processMultibulkBuffer(client *c) {
                 setProtocolError("expected $ but got something else",c);
                 return C_ERR;
             }
-
+            //字符串长度
             ok = string2ll(c->querybuf+c->qb_pos+1,newline-(c->querybuf+c->qb_pos+1),&ll);
             if (!ok || ll < 0 || ll > server.proto_max_bulk_len) {
                 addReplyError(c,"Protocol error: invalid bulk length");
@@ -1470,8 +1473,8 @@ int processMultibulkBuffer(client *c) {
                 return C_ERR;
             }
 
-            c->qb_pos = newline-c->querybuf+2;
-            if (ll >= PROTO_MBULK_BIG_ARG) {
+            c->qb_pos = newline-c->querybuf+2;//跳过\r\n
+            if (ll >= PROTO_MBULK_BIG_ARG) {//字符串长度超过1024*32
                 /* If we are going to read a large object from network
                  * try to make it likely that it will start at c->querybuf
                  * boundary so that we can optimize object creation
@@ -1481,18 +1484,21 @@ int processMultibulkBuffer(client *c) {
                  * or equal to ll+2. If the data length is greater than
                  * ll+2, trimming querybuf is just a waste of time, because
                  * at this time the querybuf contains not only our bulk. */
+                //这里只会到最后一个字符串才可能为True，并且数据不完整，数据不完整是由于redis使用非阻塞的原因
                 if (sdslen(c->querybuf)-c->qb_pos <= (size_t)ll+2) {
-                    sdsrange(c->querybuf,c->qb_pos,-1);
+                    sdsrange(c->querybuf,c->qb_pos,-1);//将[pos,len-1]之间的字符串使用memmove前移
                     c->qb_pos = 0;
                     /* Hint the sds library about the amount of bytes this string is
                      * going to contain. */
                     c->querybuf = sdsMakeRoomFor(c->querybuf,ll+2);
                 }
             }
-            c->bulklen = ll;
+            c->bulklen = ll;//字符串长度
         }
 
         /* Read bulk argument */
+        //数据不完整,有可能只接收到命令的一部分,比如命令太长,分批发送了,下次再次接收到
+        //此客户端的数据,c->bulklen不为0,会接着从c->querybuf里读
         if (sdslen(c->querybuf)-c->qb_pos < (size_t)(c->bulklen+2)) {
             /* Not enough data (+2 == trailing \r\n) */
             break;
@@ -1531,7 +1537,7 @@ int processMultibulkBuffer(client *c) {
  * more query buffer to process, because we read more data from the socket
  * or because a client was blocked and later reactivated, so there could be
  * pending query buffer, already representing a full command, to process. */
-//解析并执行命令
+//行指令解析与多重指令解析
 void processInputBuffer(client *c) {
     server.current_client = c;
 
@@ -1557,8 +1563,8 @@ void processInputBuffer(client *c) {
         if (c->flags & (CLIENT_CLOSE_AFTER_REPLY|CLIENT_CLOSE_ASAP)) break;
 
         /* Determine request type when unknown. */
-        if (!c->reqtype) {
-            if (c->querybuf[c->qb_pos] == '*') {
+        if (!c->reqtype) {//客户端请求类型
+            if (c->querybuf[c->qb_pos] == '*') {//代表传过来的是数组
                 c->reqtype = PROTO_REQ_MULTIBULK;
             } else {
                 c->reqtype = PROTO_REQ_INLINE;
@@ -1635,7 +1641,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     UNUSED(el);
     UNUSED(mask);
 
-    readlen = PROTO_IOBUF_LEN;
+    readlen = PROTO_IOBUF_LEN;//1024*16  Generic I/O buffer size
     /* If this is a multi bulk request, and we are processing a bulk reply
      * that is large enough, try to maximize the probability that the query
      * buffer contains exactly the SDS string representing the object, even
@@ -1652,10 +1658,11 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         if (remaining > 0 && remaining < readlen) readlen = remaining;
     }
 
-    qblen = sdslen(c->querybuf);//缓存已经用的大小
+    qblen = sdslen(c->querybuf);
     if (c->querybuf_peak < qblen) c->querybuf_peak = qblen;
+    //对querybuf的空间进行扩展
     c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
-    nread = read(fd, c->querybuf+qblen, readlen);//设置client的查询缓存
+    nread = read(fd, c->querybuf+qblen, readlen);//读取客户端发来的请求
     if (nread == -1) {
         if (errno == EAGAIN) {
             return;
@@ -1677,7 +1684,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
                                         c->querybuf+qblen,nread);
     }
 
-    sdsIncrLen(c->querybuf,nread);
+    sdsIncrLen(c->querybuf,nread);//改变querybuf的实际长度和空闲长度，len += nread, free -= nread;
     c->lastinteraction = server.unixtime;
     if (c->flags & CLIENT_MASTER) c->read_reploff += nread;
     server.stat_net_input_bytes += nread;

@@ -64,11 +64,12 @@ int anetSetBlock(char *err, int fd, int non_block) {
     /* Set the socket blocking (if non_block is zero) or non-blocking.
      * Note that fcntl(2) for F_GETFL and F_SETFL can't be
      * interrupted by a signal. */
+    //fcntl为系统调用,F_GETFL读取文件状态标志
     if ((flags = fcntl(fd, F_GETFL)) == -1) {
         anetSetError(err, "fcntl(F_GETFL): %s", strerror(errno));
         return ANET_ERR;
     }
-
+    //O_NONBLOCK非阻塞IO,在读取不到数据或是写入缓冲区已满会马上return，而不会阻塞等待。
     if (non_block)
         flags |= O_NONBLOCK;
     else
@@ -531,7 +532,7 @@ int anetUnixServer(char *err, char *path, mode_t perm, int backlog)
 static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *len) {
     int fd;
     while(1) {
-        fd = accept(s,sa,len);
+        fd = accept(s,sa,len);//取出连接
         if (fd == -1) {
             if (errno == EINTR)
                 continue;
@@ -554,8 +555,8 @@ int anetTcpAccept(char *err, int s, char *ip, size_t ip_len, int *port) {
 
     if (sa.ss_family == AF_INET) {
         struct sockaddr_in *s = (struct sockaddr_in *)&sa;
-        if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);
-        if (port) *port = ntohs(s->sin_port);
+        if (ip) inet_ntop(AF_INET,(void*)&(s->sin_addr),ip,ip_len);//客户端ip
+        if (port) *port = ntohs(s->sin_port);//客户端端口
     } else {
         struct sockaddr_in6 *s = (struct sockaddr_in6 *)&sa;
         if (ip) inet_ntop(AF_INET6,(void*)&(s->sin6_addr),ip,ip_len);
